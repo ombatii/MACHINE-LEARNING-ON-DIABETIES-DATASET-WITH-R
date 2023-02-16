@@ -1,0 +1,434 @@
+---
+title: "Diabetic patient dataset"
+author: "Ogeto"
+date: "2023-01-30"
+output: html_document
+---
+https://www.kaggle.com/datasets/shantanudhakadd/diabetes-dataset-for-beginners
+
+#1. PROBLEM DEFINITION
+The objective of the dataset is to diagnostically predict whether or not a patient has diabetes, based on certain diagnostic measurements included in the dataset.
+
+#2.DATA
+The dataset was downloade at this site https://www.kaggle.com/datasets/shantanudhakadd/diabetes-dataset-for-beginners
+This dataset is originally from the National Institute of Diabetes and Digestive and Kidney Diseases. The objective of the dataset is to diagnostically predict whether or not a patient has diabetes, based on certain diagnostic measurements included in the dataset. Several constraints were placed on the selection of these instances from a larger database. In particular, all patients here are females at least 21 years old of Pima Indian heritage
+
+#3.EVALUATION
+
+The method of evaluation in this project was to find the `accuracy` of each model
+
+#4.FEATURES
+The dataset consists of several medical predictor variables and one target variable, Outcome. Predictor variables includes the number of pregnancies the patient has had, their BMI, insulin level, age, and so on.
+
+***Steps taken in this project***
+1.load libraries
+2.load dataset
+3.Data analysis of the data
+4.Data splitting and creating V-folds
+5.A FIRST MODEL:RANDOM FOREST
+6.A SECOND MODEL: PENALIZED LOGISTIC REGRESSION
+
+
+
+##1.load libraries
+```{r}
+#Has tidymodel packages
+library(tidymodels)
+library(Hmisc)   #Used to find correlation
+library(GGally)  #Used for heatmap in correlation
+```
+##2.load dataset
+```{r}
+df <- as_tibble(diabetes)
+glimpse(df)    #view the datatype of different columns 
+```
+``OBSERVATION`:the dataset has only double datatype
+
+##3.Data analysis of the data
+
+```{r}
+#type 
+class(df)
+```
+```{r}
+#n.o of column and rows
+dim(df)
+```
+```{r}
+#name of columns
+ncolumns <-as.tibble(names(df))
+ncolumns 
+```
+```{r}
+#top rows
+head(df)
+```
+
+```{r}
+#bottom rows
+tail(df)
+```
+
+```{r}
+#statistical summary of numerical variables in the dataset
+summary(df)
+```
+`obsrevation`:The dataset needs to be standardized.
+
+
+```{r}
+#statistical summary of the following few columns
+df %>% 
+  skimr::skim(Pregnancies,Glucose,BloodPressure,SkinThickness,Insulin,BMI,DiabetesPedigreeFunction,Age,Outcome)
+```
+1.There is no missing data.
+2.BMI column is the only column with normal distribution.
+3.The dataset is widely distributed,it should be stardaized.
+
+
+```{r}
+#confirming there is no missing data
+sum(is.na(df))
+```
+
+```{r}
+#ratio of Outcome 
+df %>%
+  count(Outcome)%>%
+  mutate(prop=n/sum(n))
+```
+The outcomes o and 1 are fairly distributed.
+
+#Relationship between bloodpressure and age
+```{r echo=FALSE}
+df1 <- df %>% mutate(Outcome=factor(Outcome))
+
+#Relationship between Age and Outcome
+ggplot(df1,aes(x=BloodPressure,y=Age))+
+  geom_point(aes(color=Outcome ))+theme_dark()+labs("BloodPressure and Age")+stat_smooth(method="lm",
+                                                                                                                    col="#c42126",
+                                                                                                                    se= FALSE,
+                                                                                                                    size=1) + ggtitle("Relationship between bloodpressure and age")
+```
+
+```{r}
+#Relationship between BloodPressure and Pregnancies
+ggplot(df1,aes(x=BloodPressure,y= Pregnancies))+
+  geom_point(aes(color=Outcome))+theme_dark()+labs("BloodPressure and Pregnancies")+stat_smooth(method="lm",
+                                                                                                                    col="#c42126",
+                                                                                                                    se= FALSE,
+                                                                                                                    size=1) + ggtitle("#Relationship between BloodPressure and Pregnancies")
+```
+
+```{r}
+#Relationship of Pregnancies and outcome
+ggplot(df1, aes(x=Pregnancies)) +
+ geom_bar(aes(fill = Outcome), position = position_stack(reverse = TRUE)) +
+ theme(legend.position = "top") + ggtitle("Bargraph of Pregnancies") 
+```
+```{r}
+##Relationship of BloodPressures and outcome
+ggplot(df1, aes(x=BloodPressure)) +
+ geom_bar(aes(fill = Outcome), position = position_stack(reverse = TRUE)) +
+ theme(legend.position = "top") + ggtitle("Bargraph of BloodPressure") + theme_bw()
+```
+```{r}
+#correlation heatmap
+ggcorr(df1,
+    nbreaks = 6,
+    label = TRUE,
+    label_size = 3,
+    color = "grey50")
+```
+```{r}
+#Bivariate analysis of Diabetic patient dataset
+ggpairs(df1, columns = c("Pregnancies", "Glucose", "BloodPressure", "SkinThickness","Insulin","BMI","DiabetesPedigreeFunction","Age"),
+    title = "Bivariate analysis of Diabetic patient dataset",
+    upper = list(continuous = wrap("cor",
+            size = 3),
+        mapping = aes(color = Outcome)),
+    lower = list(
+        continuous = wrap("smooth",
+            alpha = 0.3,
+            size = 0.1))
+)
+```
+
+`OBSERVATION`: Glucose,Blood Pressure and BMI have normal distribution while the rest do not have normal distribution which calls for the data to be standardized.
+
+
+
+
+##4.Data splitting and creating V-folds
+```{r}
+set.seed(901)
+#rescaling the dataset
+df2 <- df1 %>%
+	mutate_if(is.numeric, funs(as.numeric(scale(.))))
+head(df1)
+
+#spliting 
+splits      <- initial_split(df1,strata = Outcome,prop = 3/4)
+
+df_other <- training(splits)
+df_test  <- testing(splits)
+```
+
+#
+```{r}
+# training set proportions by Outcome
+df_other %>% 
+  count(Outcome) %>% 
+  mutate(prop = n/sum(n))
+```
+
+```{r}
+#creating v-fold
+set.seed(345)
+folds <- vfold_cv(df_other, v = 10)
+folds
+```
+##5.A FIRST MODEL:RANDOM FOREST
+
+
+In feature engineering we will use Random Search definition
+##Set the control parameter
+To Set the control parameter i will proceed as follow to construct and evaluate the model:
+
+1.Evaluate the model with the default setting
+2.Find the best number of mtry
+3.Find the best number of maxnodes
+4.Find the best number of ntrees
+5.Evaluate the model on the test dataset
+```{r}
+#import libraries need
+library(randomForest)
+library(caret)
+library(e1071)
+
+```
+
+
+Step 1)Evaluate the model with the default setting
+```{r}
+# Define the control
+trControl <- trainControl(method = "cv",
+    number = 10,
+    search = "grid")
+```
+#
+```{r}
+set.seed(1234)
+# Run the model
+rf_default <- train(Outcome~.,
+    data = df_other,
+    method = "rf",
+    metric = "Accuracy",
+    trControl = trControl)
+# Print the results
+print(rf_default)
+```
+Step 2) Search best mtry
+```{r}
+set.seed(1234)
+tuneGrid <- expand.grid(.mtry = c(1: 10))
+rf_mtry <- train(Outcome~.,
+    data = df_other,
+    method = "rf",
+    metric = "Accuracy",
+    tuneGrid = tuneGrid,
+    trControl = trControl,
+    importance = TRUE,
+    nodesize = 14,
+    ntree = 300)
+print(rf_mtry)
+```
+
+
+```{r}
+#Highest value of accuracy
+max(rf_mtry$results$Accuracy)
+```
+
+
+```{r}
+#best value of mtry is stored 
+best_mtry <- rf_mtry$bestTune$mtry 
+best_mtry
+```
+
+Step 3) Search the best maxnodes
+I will create a loop to evaluate the different values of maxnodes. In the following code,I will:
+
+1.Create a list
+2.Create a variable with the best value of the parameter mtry; Compulsory
+3.Create the loop
+4.Store the current value of maxnode
+5.Summarize the results
+
+
+
+```{r}
+store_maxnode <- list()              #The results of the model will be stored in this list
+tuneGrid <- expand.grid(.mtry = best_mtry)  #Use the best value of mtry
+for (maxnodes in c(5: 15)) {          # Compute the model with values of maxnodes starting from 15 to 25.
+    set.seed(777)
+    rf_maxnode <-  train(Outcome~.,
+        data = df_other,
+        method = "rf",
+        metric = "Accuracy",
+        tuneGrid = tuneGrid,
+        trControl = trControl,
+        importance = TRUE,
+        nodesize = 14,
+        maxnodes = maxnodes,  #For each iteration, maxnodes is equal to the current value of maxnodes
+        ntree = 300)
+    current_iteration <- toString(maxnodes) #Store as a string variable the value of maxnode.
+    store_maxnode[[current_iteration]] <- rf_maxnode #Save the result of the model in the list
+}
+results_mtry <- resamples(store_maxnode) #Arrange the results of the model
+summary(results_mtry) #Print the summary of all the combination.
+```
+
+`OBSERVATION`: 15 have the highest accuracy of 0.7602238
+
+You can try with higher values to see if you can get a higher score.
+```{r}
+store_maxnode <- list()
+tuneGrid <- expand.grid(.mtry = best_mtry)
+for (maxnodes in c(20: 30)) {
+    set.seed(1234)
+    rf_maxnode <- train(Outcome~.,
+        data = df_other,
+        method = "rf",
+        metric = "Accuracy",
+        tuneGrid = tuneGrid,
+        trControl = trControl,
+        importance = TRUE,
+        nodesize = 14,
+        maxnodes = maxnodes,
+        ntree = 300)
+    key <- toString(maxnodes)
+    store_maxnode[[key]] <- rf_maxnode
+}
+results_node <- resamples(store_maxnode)
+summary(results_node)
+```
+
+`OBSERVATION`: 21 have the highest accuracy of 0.7519184 
+
+```{r}
+store_maxnode <- list()
+tuneGrid <- expand.grid(.mtry = best_mtry)
+for (maxnodes in c(40: 50)) {
+    set.seed(1234)
+    rf_maxnode <- train(Outcome~.,
+        data = df_other,
+        method = "rf",
+        metric = "Accuracy",
+        tuneGrid = tuneGrid,
+        trControl = trControl,
+        importance = TRUE,
+        nodesize = 14,
+        maxnodes = maxnodes,
+        ntree = 300)
+    key <- toString(maxnodes)
+    store_maxnode[[key]] <- rf_maxnode
+}
+results_node <- resamples(store_maxnode)
+summary(results_node)
+```
+
+`OBSERVATION`: 40 have the highest accuracy Of 0.7587273
+
+
+##Step 4) Search the best ntrees
+```{r}
+store_maxtrees <- list()
+for (ntree in c(250, 300, 350, 400, 450, 500, 550, 600, 800, 1000, 2000)) {
+    set.seed(5678)
+    rf_maxtrees <-  train(Outcome~.,
+        data = df_other,
+        method = "rf",
+        metric = "Accuracy",
+        tuneGrid = tuneGrid,
+        trControl = trControl,
+        importance = TRUE,
+        nodesize = 14,
+        maxnodes = 24,
+        ntree = ntree)
+    key <- toString(ntree)
+    store_maxtrees[[key]] <- rf_maxtrees
+}
+results_tree <- resamples(store_maxtrees)
+summary(results_tree)
+```
+
+`OBSERVATION`: 300 has the best accuracy.
+
+
+Now we have our final model.I will train the random forest with the following parameters:
+
+ntree = 300
+mtry= 4
+maxnodes = 15
+#final model
+```{r}
+fit_rf <- 
+    rf_maxtrees <-train(Outcome~.,
+    data = df_other,
+    method = "rf",
+    metric = "Accuracy",
+    tuneGrid = tuneGrid,
+    trControl = trControl,
+    importance = TRUE,
+    nodesize = 3,
+    ntree = 300,
+    maxnodes = 15)
+```
+
+#Predation
+```{r}
+prediction <-predict(fit_rf, df_test)
+```
+
+#
+```{r}
+confusionMatrix(prediction, df_test$Outcome)
+```
+`OBSERVATION`: our random forest has an accuracy of 0.7917 
+
+##Logistic regression
+
+#1.Build the model
+```{r}
+# Create the model to fit
+formula <- Outcome~.
+#Fit a logistic model (family = ‘binomial’)
+logit <- glm(formula, data = df_other, family = 'binomial')
+#Print the summary of the model
+summary(logit)
+```
+
+
+```{r}
+#Compute the prediction on the test set. Set type = ‘response’ to compute the response probability.
+predict <- predict(logit, df_test, type = 'response')
+# confusion matrix
+table_mat <- table(df_test$Outcome, predict > 0.5)
+table_mat
+```
+
+```{r}
+accuracy_Test <- sum(diag(table_mat)) / sum(table_mat) #Sum of the diagonal/Sum of the matrix
+accuracy_Test
+```
+#ROC curve
+```{r}
+library(ROCR)
+ROCRpred <- prediction(predict, df_test$Outcome)
+ROCRperf <- performance(ROCRpred, 'tpr', 'fpr')
+plot(ROCRperf, colorize = TRUE, text.adj = c(-0.2, 1.7))
+```
+
+`CONCLUSION`: In the above project random forest model has an accuracy of 0.7917 while logistic regression has an accuracy of 0.7760417 on test set,hence the best model for this project is **random forest model**.
