@@ -1,0 +1,2 @@
+# MACHINE-LEARNING-ON-DIABETIES-DATASET-WITH-R
+This is a machine learning (classification case) on MACHINE LEARNING ON DIABETIES DATASET WITH R
